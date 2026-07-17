@@ -56,6 +56,7 @@
     display:flex; flex-direction:column; align-items:center; gap:4px; font-size:7px;
   }
   .cardBtn canvas{ image-rendering:pixelated; width:48px; height:64px; }
+  .cardFace{ width:56px; height:56px; border-radius:50%; object-fit:cover; border:2px solid #24405e; }
   .cardBtn.picked{ border-color:#F0B429; box-shadow:0 0 0 2px #F0B429 inset; }
   .cardBtn.disabled{ opacity:0.35; pointer-events:none; }
 
@@ -144,27 +145,42 @@
    ========================================================================= */
 var ROSTER = [
   { id:'big',     name:'האח הגדול',        desc:'מתאגרף כבד',      skin:'#dba36f', hair:'#241a10', hairStyle:'short',
-    outfit:'#c9a876', outfitAccent:'#2a2a2a', under:'#f4f4f4', pants:'#3d4a5c',
+    outfit:'#c9a876', outfitAccent:'#2a2a2a', under:'#f4f4f4', pants:'#3d4a5c', face:'faces/big.jpg',
     stats:{spd:0.85,pow:1.22,def:1.12}, special:'מהלומת ענק' },
   { id:'blonde',  name:'הבלונדינית',        desc:'סערה לבנה',       skin:'#f0caa0', hair:'#e3c06a', hairStyle:'long',
-    outfit:'#e4ddca', outfitAccent:'#cfc6ab', under:'#ffffff', pants:'#1c1c1c',
+    outfit:'#e4ddca', outfitAccent:'#cfc6ab', under:'#ffffff', pants:'#1c1c1c', face:'faces/blonde.jpg',
     stats:{spd:1.18,pow:0.88,def:0.9}, special:'סופת רוח' },
   { id:'dad',     name:'אבא',              desc:'איזון מנוסה',     skin:'#dba36f', hair:'#4a3626', hairStyle:'bald',
-    outfit:'#25323e', outfitAccent:'#101820', under:'#0a0a0a', pants:'#7d8a99',
+    outfit:'#25323e', outfitAccent:'#101820', under:'#0a0a0a', pants:'#7d8a99', face:'faces/dad.jpg',
     stats:{spd:1.0,pow:1.05,def:1.05}, special:'ניסיון של אבא' },
   { id:'glasses', name:'הקטנה עם המשקפיים', desc:'מהירה כברק',      skin:'#f0caa0', hair:'#3a2416', hairStyle:'braid',
-    glasses:true, outfit:'#232a3d', outfitAccent:'#141a29', under:'#3a2416', pants:'#a9895f',
+    glasses:true, outfit:'#232a3d', outfitAccent:'#141a29', under:'#3a2416', pants:'#a9895f', face:'faces/glasses.jpg',
     stats:{spd:1.3,pow:0.72,def:0.82}, special:'בעיטת ברק' },
   { id:'mom',     name:'אמא',              desc:'טקטיקנית קרה-רוח', skin:'#dba36f', hair:'#231a12', hairStyle:'curly',
-    bag:true, outfit:'#5c7086', outfitAccent:'#3d4d5c', under:'#ffffff', pants:'#1c1c1c',
+    bag:true, outfit:'#5c7086', outfitAccent:'#3d4d5c', under:'#ffffff', pants:'#1c1c1c', face:'faces/mom.jpg',
     stats:{spd:0.95,pow:0.95,def:1.2}, special:'הגנת נגד' },
   { id:'soldier', name:'החייל',            desc:'משמעת צה"לית',    skin:'#dba36f', hair:'#141414', hairStyle:'buzz',
-    uniform:true, outfit:'#6b6b47', outfitAccent:'#54543a', under:'#54543a', pants:'#6b6b47',
+    uniform:true, outfit:'#6b6b47', outfitAccent:'#54543a', under:'#54543a', pants:'#6b6b47', face:'faces/soldier.jpg',
     stats:{spd:1.0,pow:1.18,def:1.08}, special:'מטח אש' },
   { id:'teen',    name:'האח הצעיר',        desc:'עצבני ומהיר',     skin:'#dba36f', hair:'#1c140d', hairStyle:'short',
-    outfit:'#1a1a1a', outfitAccent:'#3a3a3a', under:'#2a2a2a', pants:'#33506e',
+    outfit:'#1a1a1a', outfitAccent:'#3a3a3a', under:'#2a2a2a', pants:'#33506e', face:'faces/teen.jpg',
     stats:{spd:1.12,pow:0.95,def:0.9}, special:'שילוב מכות' }
 ];
+
+// Real family photos are shown via plain <img> elements (character select,
+// VS/win screens) rather than drawn into the canvas sprite: this renderer's
+// canvas backend corrupts a scaled drawImage-of-canvas-source whenever an
+// ambient translate/scale transform is active, so photos stay out of the
+// transformed sprite-drawing path entirely and the in-game sprite keeps its
+// procedural pixel-art head.
+var FACE_IMAGES_LOADED = 0;
+ROSTER.forEach(function(r){
+  r.img = new Image();
+  r.img.onload = function(){ FACE_IMAGES_LOADED++; };
+  r.img.onerror = function(){ FACE_IMAGES_LOADED++; };
+  r.img.src = r.face;
+});
+function allFacesReady(){ return FACE_IMAGES_LOADED >= ROSTER.length; }
 
 /* =========================================================================
    CANVAS / CONSTANTS
@@ -421,11 +437,11 @@ function drawFighter(f){
   var kickExt = (f.state==='kick') ? 16 : 0;
   ctx.fillRect(0 + legSwing*0.3, hipY, 7 + kickExt, 20 - m.crouch*0.5);
 
-  // head
+  // head — real family photo when loaded (pixelated to match the retro look),
+  // otherwise fall back to the procedural flat-color head + hair/glasses/cap
   ctx.fillStyle = r.skin;
   ctx.beginPath(); ctx.arc(2, headY, headR, 0, Math.PI*2); ctx.fill();
 
-  // hair
   ctx.fillStyle = r.hair;
   switch(r.hairStyle){
     case 'long':
@@ -532,7 +548,9 @@ function goSelect(){
   App.state = 'select';
   picked1 = null;
   var cards = ROSTER.map(function(r, i){
-    return '<div class="cardBtn" data-i="'+i+'" id="card'+i+'"><span id="cslot'+i+'"></span>' +
+    return '<div class="cardBtn" data-i="'+i+'" id="card'+i+'">' +
+      '<img class="cardFace" src="'+r.face+'">' +
+      '<span id="cslot'+i+'"></span>' +
       '<b>'+r.name+'</b><span style="opacity:.75">'+r.desc+'</span></div>';
   }).join('');
   setOverlay(
@@ -594,9 +612,11 @@ function endRound(winner){
 
 function endMatch(winner){
   App.state = 'matchend';
-  var name = winner === 1 ? P1.roster.name : P2.roster.name;
+  var winRoster = winner === 1 ? P1.roster : P2.roster;
+  var name = winRoster.name;
   var youWin = winner === 1;
   setOverlay(
+    '<img src="' + winRoster.face + '" style="width:96px;height:96px;border-radius:50%;border:4px solid ' + (youWin?'#3adb76':'#ff5b5b') + ';object-fit:cover;">' +
     '<div class="title" style="color:'+(youWin?'#3adb76':'#ff5b5b')+';">' + (youWin ? 'ניצחתם!' : 'הפסדתם') + '</div>' +
     '<div class="subtitle">' + name + ' זוכה/ת בקרב</div>' +
     '<div class="row">' +
@@ -858,7 +878,20 @@ function drawHealthBar(anchorX, y, f, rightAlign){
   ctx.fillText(f.roster.name, rightAlign ? anchorX : x, y+22);
 }
 
-goMenu();
+function goLoading(){
+  App.state = 'loading';
+  setOverlay(
+    '<div class="title" style="font-size:16px;">טוען...</div>' +
+    '<div class="subtitle blink">LOADING</div>',
+    true
+  );
+  (function poll(){
+    if (allFacesReady()) { goMenu(); }
+    else setTimeout(poll, 80);
+  })();
+}
+
+goLoading();
 requestAnimationFrame(loop);
 })();
 </script>
